@@ -1,0 +1,152 @@
+from flask import jsonify, request
+from services.chamado_service import ChamadoService
+
+PRIORIDADES_VALIDAS = ["Baixa", "Média", "Alta"]
+
+class ChamadoController():
+
+    @staticmethod
+    def valida_dados(dados):
+        if not dados:
+            return jsonify({"erro": "JSON inválido"}), 400
+
+        titulo = dados.get("titulo")
+        if not titulo:
+            return jsonify({"erro": "Título é obrigatório"}), 400
+        if len(titulo) < 5:
+            return jsonify({"erro": "Título deve possuir pelo menos 5 caracteres"}), 400
+
+        descricao = dados.get("descricao")
+        if not descricao or len(descricao) < 10:
+            return jsonify({"erro": "Descrição deve possuir pelo menos 10 caracteres"}), 400
+
+        prioridade = dados.get("prioridade")
+        if prioridade not in PRIORIDADES_VALIDAS:
+            return jsonify({"erro": "Prioridade deve ser Baixa, Média ou Alta"}), 400
+
+        usuario_id = dados.get("usuario_id")
+        if not usuario_id:
+            return jsonify({"erro": "usuario_id é obrigatório"}), 400
+        if not ChamadoService.usuario_existe(usuario_id):
+            return jsonify({"erro": "Usuário não encontrado"}), 404
+
+        if prioridade == "Alta" and ChamadoService.limite_alta_excedido(usuario_id):
+            return jsonify({"erro": "Usuário já possui 5 chamados de prioridade Alta em aberto"}), 400
+
+        return True
+
+    @staticmethod
+    def listar():
+        resultado = ChamadoService.consulta_chamados()
+        return jsonify(resultado)
+
+    @staticmethod
+    def cadastrar():
+        dados = request.json
+        valida_dados = ChamadoController.valida_dados(dados)
+        if valida_dados is not True:
+            return valida_dados
+
+        chamado = ChamadoService.cadastra_chamado(
+            titulo=dados["titulo"],
+            descricao=dados["descricao"],
+            prioridade=dados["prioridade"],
+            tecnico=dados.get("tecnico"),
+            usuario_id=dados["usuario_id"]
+        )
+
+        return jsonify({
+            "mensagem": "Chamado cadastrado",
+            "id": chamado.id
+        }), 201
+
+    @staticmethod
+    def atualizar(id):
+        chamado_atual = ChamadoService.busca_chamado(id)
+        if not chamado_atual:
+            return jsonify({"erro": "Chamado não encontrado"}), 404
+
+        dados = request.json
+        if not dados:
+            return jsonify({"erro": "JSON inválido"}), 400
+
+        titulo = dados.get("titulo")
+        if not titulo or len(titulo) < 5:
+            return jsonify({"erro": "Título deve possuir pelo menos 5 caracteres"}), 400
+
+        descricao = dados.get("descricao")
+        if not descricao or len(descricao) < 10:
+            return jsonify({"erro": "Descrição deve possuir pelo menos 10 caracteres"}), 400
+
+        prioridade = dados.get("prioridade")
+        if prioridade not in PRIORIDADES_VALIDAS:
+            return jsonify({"erro": "Prioridade deve ser Baixa, Média ou Alta"}), 400
+
+        chamado = ChamadoService.atualiza_chamado(
+            id=id,
+            titulo=titulo,
+            descricao=descricao,
+            prioridade=prioridade,
+            tecnico=dados.get("tecnico")
+        )
+
+        return jsonify({
+            "mensagem": "Chamado atualizado",
+            "id": chamado.id
+        })
+
+    @staticmethod
+    def excluir(id):
+        chamado = ChamadoService.exclui_chamado(id)
+        if not chamado:
+            return jsonify({"erro": "Chamado não encontrado"}), 404
+
+        return jsonify({
+            "mensagem": "Chamado excluído",
+            "id": chamado.id
+        })
+
+    @staticmethod
+    def iniciar(id):
+        chamado, erro = ChamadoService.iniciar_chamado(id)
+
+        if erro == "nao_encontrado":
+            return jsonify({"erro": "Chamado não encontrado"}), 404
+        if erro == "transicao_invalida":
+            return jsonify({"erro": "Só é possível iniciar atendimento de um chamado Aberto"}), 400
+
+        return jsonify({
+            "mensagem": "Chamado em atendimento",
+            "id": chamado.id,
+            "status": chamado.status
+        })
+
+    @staticmethod
+    def encerrar(id):
+        chamado, erro = ChamadoService.encerrar_chamado(id)
+
+        if erro == "nao_encontrado":
+            return jsonify({"erro": "Chamado não encontrado"}), 404
+        if erro == "transicao_invalida":
+            return jsonify({"erro": "Só é possível encerrar um chamado Em atendimento"}), 400
+
+        return jsonify({
+            "mensagem": "Chamado encerrado",
+            "id": chamado.id,
+            "status": chamado.status
+        })
+
+    @staticmethod
+    def abertos():
+        resultado = ChamadoService.consulta_abertos()
+        return jsonify(resultado)
+
+    @staticmethod
+    def prioridade_alta():
+        resultado = ChamadoService.consulta_prioridade_alta()
+        return jsonify(resultado)
+
+    @staticmethod
+    def estatisticas():
+        resultado = ChamadoService.gera_estatisticas()
+        return jsonify(resultado)
